@@ -6,6 +6,100 @@ import tensorflow as tf
 from sklearn.preprocessing import StandardScaler
 
 
+def window_series(tensor_slice, step, enc_steps_in, dec_steps_in, dec_steps_out, n_features, labels_dimension=0):
+    def mask_labels(tensor, dim=labels_dimension):
+        mask = np.zeros((dec_steps_out, n_features))
+        mask[:, dim] = 1
+        mask = tf.convert_to_tensor(mask, dtype=tf.float64)
+        
+        return tf.math.multiply(mask, tensor)
+
+    dataset = tf.data.Dataset.from_tensor_slices(tensor_slice)
+    dataset = dataset.window(enc_steps_in + dec_steps_in + dec_steps_out, shift=step, drop_remainder=True)
+    dataset = dataset.flat_map(lambda window: window.batch(enc_steps_in + dec_steps_in + dec_steps_out))
+    dataset = dataset.map(lambda window: (window[:enc_steps_in], 
+                                          window[enc_steps_in:enc_steps_in+dec_steps_in], 
+                                          mask_labels(window[enc_steps_in+dec_steps_in:])))
+
+    return dataset
+
+
+def make_dataset(filepath, **kwargs):
+    step = kwargs['step']
+    val_date = kwargs['val_date']
+    test_date = kwargs['test_date']
+    enc_steps_in = kwargs['enc_steps_in']
+    dec_steps_in = kwargs['dec_steps_in']
+    dec_steps_out = kwargs['dec_steps_out']
+    excluded_features = kwargs['excluded_features']    
+    
+    df = pd.read_csv(filepath)
+    df['Date'] = pd.to_datetime(df['Date'])
+    df.columns = [x.lower() for x in df.columns]
+    df.drop(columns=['open', 'adj close'], inplace=True)
+    
+    df = preprocess(df)
+    
+    features_list = ['close'] + [f for f in df.columns if f not in excluded_features and f != 'close']
+    n_features = len(features_list)
+    
+    if val_date and test_date:
+        train_df = df[df['date'] < val_date]
+        val_df = df[(df['date'] >= val_date) & (df['date'] < test_date)]
+        test_df = df[df['date'] >= test_date]
+        
+        scaler = StandardScaler()
+        train_dataset = window_series(scaler.fit_transform(train_df[features_list].values.tolist()), 
+                                      step, 
+                                      enc_steps_in, 
+                                      dec_steps_in, 
+                                      dec_steps_out,
+                                      n_features)
+        
+        val_dataset = window_series(scaler.transform(val_df[features_list].values.tolist()), 
+                            step, 
+                            enc_steps_in, 
+                            dec_steps_in, 
+                            dec_steps_out,
+                            n_features)
+
+        test_dataset = window_series(scaler.transform(test_df[features_list].values.tolist()), 
+                                     step, 
+                                     enc_steps_in, 
+                                     dec_steps_in, 
+                                     dec_steps_out,
+                                     n_features)
+        
+        X_train_enc = np.array([enc_x.numpy() for enc_x, _, _ in train_dataset])
+        X_train_dec = np.array([dec_x.numpy() for _, dec_x, _ in train_dataset])
+        y_train = np.array([dec_y.numpy() for _, _, dec_y in train_dataset])
+
+        X_val_enc = np.array([enc_x.numpy() for enc_x, _, _ in val_dataset])
+        X_val_dec = np.array([dec_x.numpy() for _, dec_x, _ in val_dataset])
+        y_val = np.array([dec_y.numpy() for _, _, dec_y in val_dataset])
+
+        X_test_enc = np.array([enc_x.numpy() for enc_x, _, _ in test_dataset])
+        X_test_dec = np.array([dec_x.numpy() for _, dec_x, _ in test_dataset])
+        y_test = np.array([dec_y.numpy() for _, _, dec_y in test_dataset])
+    else:
+        train_df = df
+        scaler = StandardScaler()
+        train_dataset = window_series(scaler.fit_transform(train_df[features_list].values.tolist()), 
+                                      step, 
+                                      enc_steps_in, 
+                                      dec_steps_in, 
+                                      dec_steps_out,
+                                      n_features)
+        
+        X_train_enc = np.array([enc_x.numpy() for enc_x, _, _ in train_dataset])
+        X_train_dec = np.array([dec_x.numpy() for _, dec_x, _ in train_dataset])
+        y_train = np.array([dec_y.numpy() for _, _, dec_y in train_dataset])
+        
+        X_val_enc, X_val_dec, y_val, X_test_enc, X_test_dec, y_test, scaler = None, None, None, None, None, None, None
+        
+    return X_train_enc, X_train_dec, y_train, X_val_enc, X_val_dec, y_val, X_test_enc, X_test_dec, y_test, scaler, features_list
+
+
 def preprocess(df: pd.DataFrame, num_bars: int = 1):
     df = df.copy()
     
@@ -301,95 +395,3 @@ def preprocess(df: pd.DataFrame, num_bars: int = 1):
     df.dropna(inplace=True)
 
     return df
-
-def window_series(tensor_slice, step, enc_steps_in, dec_steps_in, dec_steps_out, n_features, labels_dimension=0):
-    def mask_labels(tensor, dim=labels_dimension):
-        mask = np.zeros((dec_steps_out, n_features))
-        mask[:, dim] = 1
-        mask = tf.convert_to_tensor(mask, dtype=tf.float64)
-        
-        return tf.math.multiply(mask, tensor)
-
-    dataset = tf.data.Dataset.from_tensor_slices(tensor_slice)
-    dataset = dataset.window(enc_steps_in + dec_steps_in + dec_steps_out, shift=step, drop_remainder=True)
-    dataset = dataset.flat_map(lambda window: window.batch(enc_steps_in + dec_steps_in + dec_steps_out))
-    dataset = dataset.map(lambda window: (window[:enc_steps_in], 
-                                          window[enc_steps_in:enc_steps_in+dec_steps_in], 
-                                          mask_labels(window[enc_steps_in+dec_steps_in:])))
-
-    return dataset
-
-def make_dataset(filepath, **kwargs):
-    step = kwargs['step']
-    val_date = kwargs['val_date']
-    test_date = kwargs['test_date']
-    enc_steps_in = kwargs['enc_steps_in']
-    dec_steps_in = kwargs['dec_steps_in']
-    dec_steps_out = kwargs['dec_steps_out']
-    excluded_features = kwargs['excluded_features']    
-    
-    df = pd.read_csv(filepath)
-    df['Date'] = pd.to_datetime(df['Date'])
-    df.columns = [x.lower() for x in df.columns]
-    df.drop(columns=['open', 'adj close'], inplace=True)
-    
-    df = preprocess(df)
-    
-    features_list = ['close'] + [f for f in df.columns if f not in excluded_features and f != 'close']
-    n_features = len(features_list)
-    
-    if val_date and test_date:
-        train_df = df[df['date'] < val_date]
-        val_df = df[(df['date'] >= val_date) & (df['date'] < test_date)]
-        test_df = df[df['date'] >= test_date]
-        
-        scaler = StandardScaler()
-        train_dataset = window_series(scaler.fit_transform(train_df[features_list].values.tolist()), 
-                                      step, 
-                                      enc_steps_in, 
-                                      dec_steps_in, 
-                                      dec_steps_out,
-                                      n_features)
-        
-        val_dataset = window_series(scaler.transform(val_df[features_list].values.tolist()), 
-                            step, 
-                            enc_steps_in, 
-                            dec_steps_in, 
-                            dec_steps_out,
-                            n_features)
-
-        test_dataset = window_series(scaler.transform(test_df[features_list].values.tolist()), 
-                                     step, 
-                                     enc_steps_in, 
-                                     dec_steps_in, 
-                                     dec_steps_out,
-                                     n_features)
-        
-        X_train_enc = np.array([enc_x.numpy() for enc_x, _, _ in train_dataset])
-        X_train_dec = np.array([dec_x.numpy() for _, dec_x, _ in train_dataset])
-        y_train = np.array([dec_y.numpy() for _, _, dec_y in train_dataset])
-
-        X_val_enc = np.array([enc_x.numpy() for enc_x, _, _ in val_dataset])
-        X_val_dec = np.array([dec_x.numpy() for _, dec_x, _ in val_dataset])
-        y_val = np.array([dec_y.numpy() for _, _, dec_y in val_dataset])
-
-        X_test_enc = np.array([enc_x.numpy() for enc_x, _, _ in test_dataset])
-        X_test_dec = np.array([dec_x.numpy() for _, dec_x, _ in test_dataset])
-        y_test = np.array([dec_y.numpy() for _, _, dec_y in test_dataset])
-    else:
-        train_df = df
-        scaler = StandardScaler()
-        train_dataset = window_series(scaler.fit_transform(train_df[features_list].values.tolist()), 
-                                      step, 
-                                      enc_steps_in, 
-                                      dec_steps_in, 
-                                      dec_steps_out,
-                                      n_features)
-        
-        X_train_enc = np.array([enc_x.numpy() for enc_x, _, _ in train_dataset])
-        X_train_dec = np.array([dec_x.numpy() for _, dec_x, _ in train_dataset])
-        y_train = np.array([dec_y.numpy() for _, _, dec_y in train_dataset])
-        
-        X_val_enc, X_val_dec, y_val, X_test_enc, X_test_dec, y_test, scaler = None, None, None, None, None, None, None
-        
-    return X_train_enc, X_train_dec, y_train, X_val_enc, X_val_dec, y_val, X_test_enc, X_test_dec, y_test, scaler, features_list
