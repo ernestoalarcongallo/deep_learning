@@ -97,6 +97,7 @@ def preprocess(df: pd.DataFrame, num_bars: int = 1):
 
     return df
 
+
 def window_series(tensor_slice, step, enc_steps_in, dec_steps_in, dec_steps_out, n_features, labels_dimension=0):
     def mask_labels(tensor, dim=labels_dimension):
         mask = np.zeros((dec_steps_out, n_features))
