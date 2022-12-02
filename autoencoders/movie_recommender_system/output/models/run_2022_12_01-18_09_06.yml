@@ -1,0 +1,10 @@
+M: 131263
+N: 138493
+activation_func: tanh
+batch_size: 128
+dropout: 0.7
+epochs: 20
+loss_func: mse_loss
+optimizer_func: adam
+regularization: 0.0001
+units_l1: 700

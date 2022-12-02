@@ -132,5 +132,15 @@ dmypy.json
 .idea
 
 # custom folders
-input/
-notebooks/transformer/output
+!*/input/
+!*/runs/
+autoencoders/movie_recommender_system/ml-20m
+
+# models
+.keras
+.h5
+
+# heavy files
+.csv
+.npz
+.zip
