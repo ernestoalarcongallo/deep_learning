@@ -132,11 +132,15 @@ dmypy.json
 .idea
 
 # custom folders
-transformers/crypto_forecasting/input
-autoencoders/movie_recommender_system/input
+/input
+/output/runs
 autoencoders/movie_recommender_system/ml-20m
-autoencoders/movie_recommender_system/ml-20m.zip
 
 # models
 .keras
 .h5
+
+# heavy files
+.csv
+.npz
+.zip
